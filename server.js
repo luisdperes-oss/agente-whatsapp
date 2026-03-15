@@ -13,13 +13,14 @@ MEMÓRIA
 ----------------------------- */
 
 const memoria = {}
+const usuarios = {}
 
 /* -----------------------------
 OPENAI
 ----------------------------- */
 
 const openai = new OpenAI({
-apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY
 })
 
 /* -----------------------------
@@ -61,7 +62,6 @@ res.status(200).send(challenge)
 
 }else{
 
-console.log("Falha verificação webhook")
 res.sendStatus(403)
 
 }
@@ -97,10 +97,45 @@ return res.sendStatus(200)
 let resposta = null
 
 /* -----------------------------
+SALVAR NOME
+----------------------------- */
+
+const regexNome = /meu nome é (.*)/i
+const match = message.match(regexNome)
+
+if(match){
+
+usuarios[from] = {
+nome: match[1]
+}
+
+resposta = `Prazer ${match[1]}! Vou lembrar do seu nome.`
+
+}
+
+/* -----------------------------
+PERGUNTAR NOME
+----------------------------- */
+
+else if(message.toLowerCase().includes("qual é meu nome")){
+
+if(usuarios[from]?.nome){
+
+resposta = `Seu nome é ${usuarios[from].nome}.`
+
+}else{
+
+resposta = "Você ainda não me disse seu nome."
+
+}
+
+}
+
+/* -----------------------------
 COMANDOS
 ----------------------------- */
 
-if(message === "/menu"){
+else if(message === "/menu"){
 
 resposta = `
 🤖 *Agente Luis*
@@ -148,7 +183,7 @@ ${resultado}`
 }
 
 /* -----------------------------
-IA COM MEMÓRIA
+IA
 ----------------------------- */
 
 if(!resposta){
@@ -157,38 +192,26 @@ if(!memoria[from]){
 memoria[from] = []
 }
 
-/* adiciona mensagem do usuário */
 memoria[from].push({
 role:"user",
 content:message
 })
 
-/* limite de histórico */
 memoria[from] = memoria[from].slice(-8)
-
-const mensagens = [
-{
-role:"system",
-content:`
-Você é o Agente Luis, assistente pessoal no WhatsApp.
-
-Regras importantes:
-- Lembre informações que o usuário disser sobre si mesmo.
-- Se o usuário disser o nome dele, memorize.
-- Use o histórico da conversa para responder corretamente.
-`
-},
-...memoria[from]
-]
 
 const ai = await openai.chat.completions.create({
 model:"gpt-4.1-mini",
-messages:mensagens
+messages:[
+{
+role:"system",
+content:"Você é o Agente Luis, assistente pessoal inteligente no WhatsApp."
+},
+...memoria[from]
+]
 })
 
 resposta = ai.choices[0].message.content
 
-/* adiciona resposta na memória */
 memoria[from].push({
 role:"assistant",
 content:resposta
