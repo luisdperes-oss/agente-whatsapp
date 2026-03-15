@@ -1,6 +1,7 @@
 const express = require("express")
 const fetch = require("node-fetch")
 const OpenAI = require("openai")
+const { MongoClient } = require("mongodb")
 require("dotenv").config()
 
 const app = express()
@@ -8,19 +9,29 @@ app.use(express.json())
 
 const VERIFY_TOKEN = "Asriel1108**"
 
-const memoria = {}
-const usuarios = {}
+/* -----------------------------
+MONGODB
+----------------------------- */
+
+const client = new MongoClient(process.env.MONGO_URI)
+
+let db
+
+async function conectarDB() {
+await client.connect()
+db = client.db("agente")
+console.log("MongoDB conectado")
+}
+
+conectarDB()
+
+/* -----------------------------
+OPENAI
+----------------------------- */
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+apiKey: process.env.OPENAI_API_KEY
 })
-
-function normalizar(texto){
-  return texto
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-}
 
 /* -----------------------------
 PESQUISA
@@ -45,7 +56,7 @@ return "Não encontrei resposta para essa pesquisa."
 }
 
 /* -----------------------------
-WEBHOOK VERIFICATION
+VERIFICAR WEBHOOK
 ----------------------------- */
 
 app.get("/webhook",(req,res)=>{
@@ -63,7 +74,7 @@ res.sendStatus(403)
 })
 
 /* -----------------------------
-RECEBIMENTO MENSAGEM
+RECEBER MENSAGEM
 ----------------------------- */
 
 app.post("/webhook", async (req,res)=>{
@@ -84,24 +95,26 @@ if(!message){
 return res.sendStatus(200)
 }
 
-const texto = normalizar(message)
-
 let resposta = null
 
 /* -----------------------------
 SALVAR NOME
 ----------------------------- */
 
-const regexNome = /meu nome e (.*)/i
-const match = texto.match(regexNome)
+const regexNome = /meu nome é (.*)/i
+const match = message.match(regexNome)
 
 if(match){
 
-const nomeOriginal = message.split("é")[1].trim()
+const nome = match[1]
 
-usuarios[from] = { nome: nomeOriginal }
+await db.collection("usuarios").updateOne(
+{ telefone: from },
+{ $set: { nome: nome } },
+{ upsert: true }
+)
 
-resposta = `Prazer ${nomeOriginal}! Vou lembrar do seu nome.`
+resposta = `Prazer ${nome}! Vou lembrar do seu nome.`
 
 }
 
@@ -109,15 +122,13 @@ resposta = `Prazer ${nomeOriginal}! Vou lembrar do seu nome.`
 PERGUNTAR NOME
 ----------------------------- */
 
-else if(
-texto.includes("qual e meu nome") ||
-texto.includes("qual meu nome") ||
-texto.includes("voce sabe meu nome")
-){
+else if(message.toLowerCase().includes("qual é meu nome")){
 
-if(usuarios[from]?.nome){
+const usuario = await db.collection("usuarios").findOne({ telefone: from })
 
-resposta = `Seu nome é ${usuarios[from].nome}.`
+if(usuario?.nome){
+
+resposta = `Seu nome é ${usuario.nome}.`
 
 }else{
 
@@ -131,7 +142,7 @@ resposta = "Você ainda não me disse seu nome."
 COMANDOS
 ----------------------------- */
 
-else if(texto === "/menu"){
+else if(message === "/menu"){
 
 resposta = `
 🤖 *Agente Luis*
@@ -145,27 +156,27 @@ Comandos disponíveis
 
 }
 
-else if(texto === "/ajuda"){
+else if(message === "/ajuda"){
 
 resposta = `
 Sou o *Agente Luis*
 
 Posso responder perguntas,
 fazer pesquisas e ajudar em tarefas.
-
-Digite /menu
 `
 
 }
 
-else if(texto.startsWith("/pesquisa")){
+else if(message.startsWith("/pesquisa")){
 
 const pergunta = message.replace("/pesquisa","").trim()
 
 if(!pergunta){
 resposta = "Digite algo depois de /pesquisa"
 }else{
+
 const resultado = await pesquisar(pergunta)
+
 resposta = `🔎 Pesquisa
 
 ${resultado}`
@@ -174,44 +185,31 @@ ${resultado}`
 }
 
 /* -----------------------------
-IA COM MEMÓRIA
+IA
 ----------------------------- */
 
 if(!resposta){
-
-if(!memoria[from]){
-memoria[from] = []
-}
-
-memoria[from].push({
-role:"user",
-content:message
-})
-
-memoria[from] = memoria[from].slice(-8)
 
 const ai = await openai.chat.completions.create({
 model:"gpt-4.1-mini",
 messages:[
 {
 role:"system",
-content:"Você é o Agente Luis, assistente pessoal inteligente no WhatsApp."
+content:"Você é o Agente Luis, assistente pessoal no WhatsApp."
 },
-...memoria[from]
+{
+role:"user",
+content:message
+}
 ]
 })
 
 resposta = ai.choices[0].message.content
 
-memoria[from].push({
-role:"assistant",
-content:resposta
-})
-
 }
 
 /* -----------------------------
-ENVIA WHATSAPP
+ENVIAR WHATSAPP
 ----------------------------- */
 
 await fetch(
@@ -244,6 +242,10 @@ console.log("Erro:",err)
 res.sendStatus(200)
 
 })
+
+/* -----------------------------
+SERVIDOR
+----------------------------- */
 
 const PORT = process.env.PORT || 3000
 
