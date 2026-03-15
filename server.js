@@ -8,20 +8,19 @@ app.use(express.json())
 
 const VERIFY_TOKEN = "Asriel1108**"
 
-/* -----------------------------
-MEMÓRIA
------------------------------ */
-
 const memoria = {}
 const usuarios = {}
-
-/* -----------------------------
-OPENAI
------------------------------ */
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
+
+function normalizar(texto){
+  return texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+}
 
 /* -----------------------------
 PESQUISA
@@ -46,7 +45,7 @@ return "Não encontrei resposta para essa pesquisa."
 }
 
 /* -----------------------------
-VERIFICAÇÃO WEBHOOK
+WEBHOOK VERIFICATION
 ----------------------------- */
 
 app.get("/webhook",(req,res)=>{
@@ -56,14 +55,9 @@ const token = req.query["hub.verify_token"]
 const challenge = req.query["hub.challenge"]
 
 if(mode==="subscribe" && token===VERIFY_TOKEN){
-
-console.log("Webhook verificado")
 res.status(200).send(challenge)
-
 }else{
-
 res.sendStatus(403)
-
 }
 
 })
@@ -73,8 +67,6 @@ RECEBIMENTO MENSAGEM
 ----------------------------- */
 
 app.post("/webhook", async (req,res)=>{
-
-console.log("Evento recebido")
 
 try{
 
@@ -88,11 +80,11 @@ const message = messageData.text?.body
 const from = messageData.from
 const phone_id = req.body.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id
 
-console.log("Mensagem:",message)
-
 if(!message){
 return res.sendStatus(200)
 }
+
+const texto = normalizar(message)
 
 let resposta = null
 
@@ -100,16 +92,16 @@ let resposta = null
 SALVAR NOME
 ----------------------------- */
 
-const regexNome = /meu nome é (.*)/i
-const match = message.match(regexNome)
+const regexNome = /meu nome e (.*)/i
+const match = texto.match(regexNome)
 
 if(match){
 
-usuarios[from] = {
-nome: match[1]
-}
+const nomeOriginal = message.split("é")[1].trim()
 
-resposta = `Prazer ${match[1]}! Vou lembrar do seu nome.`
+usuarios[from] = { nome: nomeOriginal }
+
+resposta = `Prazer ${nomeOriginal}! Vou lembrar do seu nome.`
 
 }
 
@@ -117,7 +109,11 @@ resposta = `Prazer ${match[1]}! Vou lembrar do seu nome.`
 PERGUNTAR NOME
 ----------------------------- */
 
-else if(message.toLowerCase().includes("qual é meu nome")){
+else if(
+texto.includes("qual e meu nome") ||
+texto.includes("qual meu nome") ||
+texto.includes("voce sabe meu nome")
+){
 
 if(usuarios[from]?.nome){
 
@@ -135,7 +131,7 @@ resposta = "Você ainda não me disse seu nome."
 COMANDOS
 ----------------------------- */
 
-else if(message === "/menu"){
+else if(texto === "/menu"){
 
 resposta = `
 🤖 *Agente Luis*
@@ -149,7 +145,7 @@ Comandos disponíveis
 
 }
 
-else if(message === "/ajuda"){
+else if(texto === "/ajuda"){
 
 resposta = `
 Sou o *Agente Luis*
@@ -162,28 +158,23 @@ Digite /menu
 
 }
 
-else if(message.startsWith("/pesquisa")){
+else if(texto.startsWith("/pesquisa")){
 
 const pergunta = message.replace("/pesquisa","").trim()
 
 if(!pergunta){
-
 resposta = "Digite algo depois de /pesquisa"
-
 }else{
-
 const resultado = await pesquisar(pergunta)
-
 resposta = `🔎 Pesquisa
 
 ${resultado}`
-
 }
 
 }
 
 /* -----------------------------
-IA
+IA COM MEMÓRIA
 ----------------------------- */
 
 if(!resposta){
@@ -219,13 +210,11 @@ content:resposta
 
 }
 
-console.log("Resposta:",resposta)
-
 /* -----------------------------
 ENVIA WHATSAPP
 ----------------------------- */
 
-const respostaMeta = await fetch(
+await fetch(
 `https://graph.facebook.com/v19.0/${phone_id}/messages`,
 {
 method:"POST",
@@ -246,23 +235,15 @@ body:resposta
 }
 )
 
-const resultadoMeta = await respostaMeta.json()
-
-console.log("META:",resultadoMeta)
-
 }catch(err){
 
-console.log("Erro servidor:",err)
+console.log("Erro:",err)
 
 }
 
 res.sendStatus(200)
 
 })
-
-/* -----------------------------
-SERVIDOR
------------------------------ */
 
 const PORT = process.env.PORT || 3000
 
