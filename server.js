@@ -1,7 +1,7 @@
 const express = require("express")
 const fetch = require("node-fetch")
 const OpenAI = require("openai")
-const { MongoClient } = require("mongodb")
+const { MongoClient, ServerApiVersion } = require("mongodb")
 require("dotenv").config()
 
 const app = express()
@@ -13,9 +13,16 @@ const VERIFY_TOKEN = "Asriel1108**"
 MONGODB
 ----------------------------- */
 
-const client = new MongoClient(process.env.MONGO_URI)
+const client = new MongoClient(process.env.MONGO_URI, {
+serverApi: {
+version: ServerApiVersion.v1,
+strict: true,
+deprecationErrors: true
+},
+tls: true
+})
 
-let db
+let db = null
 
 async function conectarDB(){
 try{
@@ -85,6 +92,8 @@ RECEBER MENSAGEM
 
 app.post("/webhook", async (req,res)=>{
 
+console.log("Evento recebido")
+
 try{
 
 const messageData = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]
@@ -97,6 +106,9 @@ const message = messageData.text?.body?.trim()
 const from = messageData.from
 const phone_id = req.body.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id
 
+console.log("Mensagem:",message)
+console.log("Numero:",from)
+
 if(!message){
 return res.sendStatus(200)
 }
@@ -105,15 +117,12 @@ let resposta = null
 
 /* -----------------------------
 SALVAR NOME
-Aceita:
-meu nome é
-meu nome e
 ----------------------------- */
 
 const regexNome = /meu nome [eé]\s+(.*)/i
 const match = message.match(regexNome)
 
-if(match){
+if(match && db){
 
 const nome = match[1].trim()
 
@@ -129,23 +138,16 @@ resposta = `Prazer ${nome}! Vou lembrar do seu nome.`
 
 /* -----------------------------
 PERGUNTAR NOME
-Aceita:
-qual é meu nome
-qual e meu nome
 ----------------------------- */
 
-else if(/qual\s+[eé]\s+meu\s+nome/i.test(message)){
+else if(/qual\s+[eé]\s+meu\s+nome/i.test(message) && db){
 
 const usuario = await db.collection("usuarios").findOne({ telefone: from })
 
 if(usuario?.nome){
-
 resposta = `Seu nome é ${usuario.nome}.`
-
 }else{
-
 resposta = "Você ainda não me disse seu nome."
-
 }
 
 }
@@ -184,9 +186,7 @@ else if(message.startsWith("/pesquisa")){
 const pergunta = message.replace("/pesquisa","").trim()
 
 if(!pergunta){
-
 resposta = "Digite algo depois de /pesquisa"
-
 }else{
 
 const resultado = await pesquisar(pergunta)
@@ -194,7 +194,6 @@ const resultado = await pesquisar(pergunta)
 resposta = `🔎 Pesquisa
 
 ${resultado}`
-
 }
 
 }
@@ -228,7 +227,7 @@ ENVIAR WHATSAPP
 ----------------------------- */
 
 await fetch(
-`https://graph.facebook.com/v19.0/${phone_id}/messages`,
+`https://graph.facebook.com/v20.0/${phone_id}/messages`,
 {
 method:"POST",
 headers:{
@@ -247,6 +246,8 @@ body:resposta
 })
 }
 )
+
+console.log("Resposta enviada:",resposta)
 
 }catch(err){
 
