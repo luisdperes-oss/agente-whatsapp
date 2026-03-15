@@ -8,6 +8,16 @@ app.use(express.json())
 
 const VERIFY_TOKEN = "Asriel1108**"
 
+/* -----------------------------
+MEMÓRIA DE CONVERSA
+----------------------------- */
+
+const memoria = {}
+
+/* -----------------------------
+OPENAI
+----------------------------- */
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
@@ -16,45 +26,45 @@ const openai = new OpenAI({
 FUNÇÃO PESQUISA
 ----------------------------- */
 
-async function pesquisar(pergunta) {
+async function pesquisar(pergunta){
 
-  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(pergunta)}&format=json&lang=pt-br`
+const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(pergunta)}&format=json&lang=pt-br`
 
-  const response = await fetch(url)
-  const data = await response.json()
+const response = await fetch(url)
+const data = await response.json()
 
-  if (data.Abstract) {
-    return data.Abstract
-  }
+if(data.Abstract){
+return data.Abstract
+}
 
-  if (data.RelatedTopics?.[0]?.Text) {
-    return data.RelatedTopics[0].Text
-  }
+if(data.RelatedTopics?.[0]?.Text){
+return data.RelatedTopics[0].Text
+}
 
-  return "Não encontrei resposta para essa pesquisa."
+return "Não encontrei resposta para essa pesquisa."
 }
 
 /* -----------------------------
 VERIFICAÇÃO WEBHOOK
 ----------------------------- */
 
-app.get("/webhook", (req, res) => {
+app.get("/webhook",(req,res)=>{
 
-  const mode = req.query["hub.mode"]
-  const token = req.query["hub.verify_token"]
-  const challenge = req.query["hub.challenge"]
+const mode = req.query["hub.mode"]
+const token = req.query["hub.verify_token"]
+const challenge = req.query["hub.challenge"]
 
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+if(mode==="subscribe" && token===VERIFY_TOKEN){
 
-    console.log("Webhook verificado")
-    res.status(200).send(challenge)
+console.log("Webhook verificado")
+res.status(200).send(challenge)
 
-  } else {
+}else{
 
-    console.log("Falha verificação webhook")
-    res.sendStatus(403)
+console.log("Falha verificação webhook")
+res.sendStatus(403)
 
-  }
+}
 
 })
 
@@ -62,39 +72,39 @@ app.get("/webhook", (req, res) => {
 RECEBIMENTO MENSAGEM
 ----------------------------- */
 
-app.post("/webhook", async (req, res) => {
+app.post("/webhook", async (req,res)=>{
 
-  console.log("Evento recebido")
+console.log("Evento recebido")
 
-  try {
+try{
 
-    const messageData = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]
+const messageData = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]
 
-    if (!messageData) {
-      return res.sendStatus(200)
-    }
+if(!messageData){
+return res.sendStatus(200)
+}
 
-    const message = messageData.text?.body
-    const from = messageData.from
-    const phone_id = req.body.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id
+const message = messageData.text?.body
+const from = messageData.from
+const phone_id = req.body.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id
 
-    console.log("Mensagem:", message)
-    console.log("Numero:", from)
-    console.log("PhoneID:", phone_id)
+console.log("Mensagem:",message)
+console.log("Numero:",from)
+console.log("PhoneID:",phone_id)
 
-    if (!message) {
-      return res.sendStatus(200)
-    }
+if(!message){
+return res.sendStatus(200)
+}
 
-    let resposta = null
+let resposta = null
 
-    /* -----------------------------
-    COMANDOS
-    ----------------------------- */
+/* -----------------------------
+COMANDOS
+----------------------------- */
 
-    if (message === "/menu") {
+if(message === "/menu"){
 
-      resposta = `
+resposta = `
 🤖 *Agente Luis*
 
 Comandos disponíveis:
@@ -104,11 +114,11 @@ Comandos disponíveis:
 /pesquisa pergunta
 `
 
-    }
+}
 
-    else if (message === "/ajuda") {
+else if(message === "/ajuda"){
 
-      resposta = `
+resposta = `
 Sou o *Agente Luis*
 
 Posso responder perguntas,
@@ -117,90 +127,101 @@ fazer pesquisas e ajudar em tarefas.
 Digite /menu
 `
 
-    }
+}
 
-    else if (message.startsWith("/pesquisa")) {
+else if(message.startsWith("/pesquisa")){
 
-      const pergunta = message.replace("/pesquisa", "").trim()
+const pergunta = message.replace("/pesquisa","").trim()
 
-      if (!pergunta) {
+if(!pergunta){
 
-        resposta = "Digite algo depois de /pesquisa"
+resposta = "Digite algo depois de /pesquisa"
 
-      } else {
+}else{
 
-        const resultado = await pesquisar(pergunta)
+const resultado = await pesquisar(pergunta)
 
-        resposta = `🔎 Pesquisa
+resposta = `🔎 Pesquisa
 
 ${resultado}`
 
-      }
+}
 
-    }
+}
 
-    /* -----------------------------
-    IA
-    ----------------------------- */
+/* -----------------------------
+IA COM MEMÓRIA
+----------------------------- */
 
-    if (!resposta) {
+if(!resposta){
 
-      const ai = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-          {
-            role: "system",
-            content: "Você é o Agente Luis, assistente pessoal inteligente no WhatsApp."
-          },
-          {
-            role: "user",
-            content: message
-          }
-        ]
-      })
+if(!memoria[from]){
+memoria[from] = []
+}
 
-      resposta = ai.choices[0].message.content
+memoria[from].push({
+role:"user",
+content:message
+})
 
-    }
+const ai = await openai.chat.completions.create({
+model:"gpt-4.1-mini",
+messages:[
+{
+role:"system",
+content:"Você é o Agente Luis, assistente pessoal inteligente no WhatsApp."
+},
+...memoria[from]
+]
+})
 
-    console.log("Resposta:", resposta)
+resposta = ai.choices[0].message.content
 
-    /* -----------------------------
-    ENVIA WHATSAPP
-    ----------------------------- */
+memoria[from].push({
+role:"assistant",
+content:resposta
+})
 
-    const respostaMeta = await fetch(
-      `https://graph.facebook.com/v19.0/${phone_id}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.WHATSAPP_TOKEN}`
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to: from,
-          type: "text",
-          text: {
-            preview_url: false,
-            body: resposta
-          }
-        })
-      }
-    )
+}
 
-    const resultadoMeta = await respostaMeta.json()
+console.log("Resposta:",resposta)
 
-    console.log("Resposta META:", resultadoMeta)
+/* -----------------------------
+ENVIA WHATSAPP
+----------------------------- */
 
-  } catch (err) {
+const respostaMeta = await fetch(
+`https://graph.facebook.com/v19.0/${phone_id}/messages`,
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json",
+Authorization:`Bearer ${process.env.WHATSAPP_TOKEN}`
+},
+body:JSON.stringify({
+messaging_product:"whatsapp",
+recipient_type:"individual",
+to:from,
+type:"text",
+text:{
+preview_url:false,
+body:resposta
+}
+})
+}
+)
 
-    console.log("Erro servidor:", err)
+const resultadoMeta = await respostaMeta.json()
 
-  }
+console.log("Resposta META:",resultadoMeta)
 
-  res.sendStatus(200)
+}catch(err){
+
+console.log("Erro servidor:",err)
+
+}
+
+res.sendStatus(200)
 
 })
 
@@ -210,6 +231,6 @@ SERVIDOR
 
 const PORT = process.env.PORT || 3000
 
-app.listen(PORT, () => {
-  console.log("Servidor rodando porta", PORT)
+app.listen(PORT,()=>{
+console.log("Servidor rodando porta",PORT)
 })
