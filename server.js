@@ -45,7 +45,7 @@ return "Não encontrei resposta para essa pesquisa."
 }
 
 /* -----------------------------
-WEBHOOK VERIFICATION
+VERIFICAÇÃO WEBHOOK
 ----------------------------- */
 
 app.get("/webhook",(req,res)=>{
@@ -163,13 +163,20 @@ role:"user",
 content:message
 })
 
-/* limita memória para últimas 10 mensagens */
-memoria[from] = memoria[from].slice(-10)
+/* limite de histórico */
+memoria[from] = memoria[from].slice(-8)
 
 const mensagens = [
 {
 role:"system",
-content:"Você é o Agente Luis, assistente pessoal inteligente no WhatsApp."
+content:`
+Você é o Agente Luis, assistente pessoal no WhatsApp.
+
+Regras importantes:
+- Lembre informações que o usuário disser sobre si mesmo.
+- Se o usuário disser o nome dele, memorize.
+- Use o histórico da conversa para responder corretamente.
+`
 },
 ...memoria[from]
 ]
