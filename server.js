@@ -9,7 +9,7 @@ app.use(express.json())
 const VERIFY_TOKEN = "Asriel1108**"
 
 /* -----------------------------
-MEMÓRIA DE CONVERSA
+MEMÓRIA
 ----------------------------- */
 
 const memoria = {}
@@ -19,11 +19,11 @@ OPENAI
 ----------------------------- */
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+apiKey: process.env.OPENAI_API_KEY
 })
 
 /* -----------------------------
-FUNÇÃO PESQUISA
+PESQUISA
 ----------------------------- */
 
 async function pesquisar(pergunta){
@@ -45,7 +45,7 @@ return "Não encontrei resposta para essa pesquisa."
 }
 
 /* -----------------------------
-VERIFICAÇÃO WEBHOOK
+WEBHOOK VERIFICATION
 ----------------------------- */
 
 app.get("/webhook",(req,res)=>{
@@ -89,8 +89,6 @@ const from = messageData.from
 const phone_id = req.body.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id
 
 console.log("Mensagem:",message)
-console.log("Numero:",from)
-console.log("PhoneID:",phone_id)
 
 if(!message){
 return res.sendStatus(200)
@@ -107,7 +105,7 @@ if(message === "/menu"){
 resposta = `
 🤖 *Agente Luis*
 
-Comandos disponíveis:
+Comandos disponíveis
 
 /menu
 /ajuda
@@ -159,24 +157,31 @@ if(!memoria[from]){
 memoria[from] = []
 }
 
+/* adiciona mensagem do usuário */
 memoria[from].push({
 role:"user",
 content:message
 })
 
-const ai = await openai.chat.completions.create({
-model:"gpt-4.1-mini",
-messages:[
+/* limita memória para últimas 10 mensagens */
+memoria[from] = memoria[from].slice(-10)
+
+const mensagens = [
 {
 role:"system",
 content:"Você é o Agente Luis, assistente pessoal inteligente no WhatsApp."
 },
 ...memoria[from]
 ]
+
+const ai = await openai.chat.completions.create({
+model:"gpt-4.1-mini",
+messages:mensagens
 })
 
 resposta = ai.choices[0].message.content
 
+/* adiciona resposta na memória */
 memoria[from].push({
 role:"assistant",
 content:resposta
@@ -213,7 +218,7 @@ body:resposta
 
 const resultadoMeta = await respostaMeta.json()
 
-console.log("Resposta META:",resultadoMeta)
+console.log("META:",resultadoMeta)
 
 }catch(err){
 
