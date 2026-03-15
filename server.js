@@ -17,10 +17,14 @@ const client = new MongoClient(process.env.MONGO_URI)
 
 let db
 
-async function conectarDB() {
+async function conectarDB(){
+try{
 await client.connect()
 db = client.db("agente")
 console.log("MongoDB conectado")
+}catch(err){
+console.log("Erro ao conectar MongoDB:",err)
+}
 }
 
 conectarDB()
@@ -53,6 +57,7 @@ return data.RelatedTopics[0].Text
 }
 
 return "Não encontrei resposta para essa pesquisa."
+
 }
 
 /* -----------------------------
@@ -66,6 +71,7 @@ const token = req.query["hub.verify_token"]
 const challenge = req.query["hub.challenge"]
 
 if(mode==="subscribe" && token===VERIFY_TOKEN){
+console.log("Webhook verificado")
 res.status(200).send(challenge)
 }else{
 res.sendStatus(403)
@@ -87,7 +93,7 @@ if(!messageData){
 return res.sendStatus(200)
 }
 
-const message = messageData.text?.body
+const message = messageData.text?.body?.trim()
 const from = messageData.from
 const phone_id = req.body.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id
 
@@ -99,14 +105,17 @@ let resposta = null
 
 /* -----------------------------
 SALVAR NOME
+Aceita:
+meu nome é
+meu nome e
 ----------------------------- */
 
-const regexNome = /meu nome é (.*)/i
+const regexNome = /meu nome [eé]\s+(.*)/i
 const match = message.match(regexNome)
 
 if(match){
 
-const nome = match[1]
+const nome = match[1].trim()
 
 await db.collection("usuarios").updateOne(
 { telefone: from },
@@ -120,9 +129,12 @@ resposta = `Prazer ${nome}! Vou lembrar do seu nome.`
 
 /* -----------------------------
 PERGUNTAR NOME
+Aceita:
+qual é meu nome
+qual e meu nome
 ----------------------------- */
 
-else if(message.toLowerCase().includes("qual é meu nome")){
+else if(/qual\s+[eé]\s+meu\s+nome/i.test(message)){
 
 const usuario = await db.collection("usuarios").findOne({ telefone: from })
 
@@ -172,7 +184,9 @@ else if(message.startsWith("/pesquisa")){
 const pergunta = message.replace("/pesquisa","").trim()
 
 if(!pergunta){
+
 resposta = "Digite algo depois de /pesquisa"
+
 }else{
 
 const resultado = await pesquisar(pergunta)
@@ -180,6 +194,7 @@ const resultado = await pesquisar(pergunta)
 resposta = `🔎 Pesquisa
 
 ${resultado}`
+
 }
 
 }
@@ -195,7 +210,7 @@ model:"gpt-4.1-mini",
 messages:[
 {
 role:"system",
-content:"Você é o Agente Luis, assistente pessoal no WhatsApp."
+content:"Você é o Agente Luis, assistente pessoal inteligente no WhatsApp."
 },
 {
 role:"user",
@@ -235,7 +250,7 @@ body:resposta
 
 }catch(err){
 
-console.log("Erro:",err)
+console.log("Erro servidor:",err)
 
 }
 
